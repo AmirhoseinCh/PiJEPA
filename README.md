@@ -135,7 +135,7 @@ If you find this work useful, please cite:
 ```bibtex
 @article{pijepa2026,
   title={PiJEPA: Policy-Guided World Model Planning for Language-Conditioned Visual Navigation},
-  author={...},
+  author={Amirhosein Chahe and Lifeng Zhou},
   journal={...},
   year={2026}
 }
