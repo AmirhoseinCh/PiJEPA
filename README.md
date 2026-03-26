@@ -39,8 +39,8 @@ pip install -e .
 We use the [CAST dataset](https://huggingface.co/datasets/catglossop/CAST-dataset) for training and evaluation.
 
 ```python
-# The dataset is automatically downloaded from HuggingFace during training
-# Data path can be configured in the config files
+hf download catglossop/CAST-dataset --repo-type=dataset --local-dir ./CAST-dataset
+# Data path should be configured in the config files
 ```
 
 ## Training
