@@ -161,7 +161,7 @@ cython_debug/
 
 .ipynb_checkpoints/
 wandb
-*.png
+# *.png
 *.sif
 .vscode
 .idea
