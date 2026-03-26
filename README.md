@@ -9,7 +9,7 @@ PiJEPA leverages:
 - **JEPA World Models**: Latent world models using DINOv2 or V-JEPA-2 encoders
 - **MPPI Planning**: Model Predictive Path Integral for action optimization
 
-![Architecture](docs/assets/teaser.jpg)
+![Architecture](docs/assets/PiJEPA-Teaser.png)
 
 ## Installation
 
