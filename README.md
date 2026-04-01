@@ -1,6 +1,6 @@
 # PiJEPA: Policy-Guided World Model Planning for Language-Conditioned Visual Navigation
 
-This repository contains the code for reproducing the experiments in the PiJEPA paper. PiJEPA combines policy-guided planning with JEPA-based world models for language-conditioned visual navigation.
+This repository contains the code for reproducing the experiments in the [PiJEPA paper](https://arxiv.org/abs/2603.25981). PiJEPA combines policy-guided planning with JEPA-based world models for language-conditioned visual navigation.
 
 ## Overview
 
@@ -133,11 +133,14 @@ This codebase builds upon:
 If you find this work useful, please cite:
 
 ```bibtex
-@article{pijepa2026,
-  title={PiJEPA: Policy-Guided World Model Planning for Language-Conditioned Visual Navigation},
-  author={Amirhosein Chahe and Lifeng Zhou},
-  journal={...},
-  year={2026}
+@misc{chahe2026policyguidedworldmodelplanning,
+      title={Policy-Guided World Model Planning for Language-Conditioned Visual Navigation}, 
+      author={Amirhosein Chahe and Lifeng Zhou},
+      year={2026},
+      eprint={2603.25981},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2603.25981}, 
 }
 ```
 
