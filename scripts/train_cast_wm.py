@@ -554,10 +554,15 @@ def build_predictor(cfg):
 # CAST dataset helpers (mirrors finetune_cast_dino.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def build_cast_datasets(cfg):
+def build_cast_datasets(cfg, process_index=0, process_count=1):
     """
     Returns (train_dataset, val_dataset) as tf.data.Dataset objects
     using the octo RLDS pipeline.
+
+    When process_count > 1, each DDP rank is given a distinct shard of the
+    stream. TorchRLDSDataset is an IterableDataset, so DataLoader's
+    DistributedSampler cannot shard it; without this every rank would train on
+    the same frames.
     """
     transform = ModuleSpec.create(
         gnm_action_angle_dataset_transform,
@@ -617,6 +622,10 @@ def build_cast_datasets(cfg):
         lambda x: tf.reduce_any(x["observation"]["image_primary"] != 255)
     )
 
+    if process_count > 1:
+        train_dataset = train_dataset.shard(process_count, process_index)
+        val_dataset = val_dataset.shard(process_count, process_index)
+
     train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
     val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
 
@@ -673,12 +682,20 @@ def main(_):
         cfg.lr = FLAGS.lr
 
     # ── Distributed setup ─────────────────────────────────────────────────
+    # TensorFlow only supplies the tf.data input pipeline here; stop it from
+    # reserving GPU memory that PyTorch needs.
+    try:
+        tf.config.set_visible_devices([], "GPU")
+    except RuntimeError:
+        pass  # a CUDA context may already exist in an interactive session
     assert torch.cuda.is_available(), "CUDA required"
     distributed_state = _setup_distributed()
     torch.cuda.set_device(device_id := distributed_state.local_process_index)
     torch.cuda.empty_cache()
     device = torch.device(f"cuda:{device_id}")
     is_main = distributed_state.is_main_process
+    process_index = distributed_state.process_index
+    process_count = distributed_state.num_processes
 
     if is_main:
         logging.set_verbosity(logging.INFO)
@@ -711,7 +728,9 @@ def main(_):
     # ── Build dataset ─────────────────────────────────────────────────────
     logging.info("Loading CAST dataset ...")
     text_processor = make_text_processor()
-    train_tf_ds, val_tf_ds, dataset_statistics = build_cast_datasets(cfg)
+    train_tf_ds, val_tf_ds, dataset_statistics = build_cast_datasets(
+        cfg, process_index=process_index, process_count=process_count
+    )
 
     train_pt = TorchRLDSDataset(train_tf_ds, text_processor, train=True)
     val_pt = TorchRLDSDataset(val_tf_ds, text_processor, train=False)
