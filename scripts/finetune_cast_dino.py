@@ -277,16 +277,24 @@ def main(_):
     )
     logging.debug(f"   ✓ Loaded weights  (missing={len(missing_keys)}, skipped={len(skipped_keys)})")
 
-    # ── Step 6: Move to device + DDP ─────────────────────────────────────
+    # ── Step 6: Freeze encoders ──────────────────────────────────────────
+    # Freeze BEFORE wrapping in DDP. DDP builds its gradient reducer from the
+    # parameters that have requires_grad=True at construction time, so freezing
+    # afterwards leaves all ~158M parameters registered with the reducer even
+    # though only the ~26M trainable ones ever receive a gradient. Freezing
+    # first keeps the frozen DinoV2 + T5 params out of the reducer's bookkeeping.
+    # The frozen set is unchanged: freeze_weights_pt matches with re.match on a
+    # leading-wildcard pattern, so the patterns match parameter names with or
+    # without DDP's "module." prefix.
+    logging.debug("\n❄️  Freezing DinoV2 and T5 text encoder weights...")
+    frozen_keys = list(config.optimizer.frozen_keys)
+    freeze_weights_pt(model, frozen_keys)
+
+    # ── Step 7: Move to device + DDP ─────────────────────────────────────
     model = model.to(device_id)
     model = DDP(model, device_ids=[device_id],
                 find_unused_parameters=True,
                 gradient_as_bucket_view=True)
-
-    # ── Step 7: Freeze encoders ──────────────────────────────────────────
-    logging.debug("\n❄️  Freezing DinoV2 and T5 text encoder weights...")
-    frozen_keys = list(config.optimizer.frozen_keys)
-    freeze_weights_pt(model, frozen_keys)
 
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in model.parameters())
