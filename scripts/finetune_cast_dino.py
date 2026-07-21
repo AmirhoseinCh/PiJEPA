@@ -104,6 +104,12 @@ def main(_):
     config = config_module.get_config()
 
     # ── Distributed setup ─────────────────────────────────────────────────
+    # TensorFlow only supplies the tf.data input pipeline here; stop it from
+    # reserving GPU memory that PyTorch needs.
+    try:
+        tf.config.set_visible_devices([], "GPU")
+    except RuntimeError:
+        pass  # a CUDA context may already exist in an interactive session
     assert torch.cuda.is_available()
     distributed_state = PartialState()
 
@@ -111,6 +117,7 @@ def main(_):
     torch.cuda.empty_cache()
     device = torch.device(f"cuda:{device_id}")
     num_devices = distributed_state.num_processes
+    process_index = distributed_state.process_index
 
     if distributed_state.is_main_process:
         logging.set_verbosity(logging.INFO)
@@ -214,6 +221,14 @@ def main(_):
     val_dataset = val_dataset.filter(
         lambda x: tf.reduce_all(x["action"][:, 3:, :] != 0.0)
     )
+
+    # Each DDP rank must consume a distinct slice of this IterableDataset.
+    # DataLoader's DistributedSampler cannot shard an iterable dataset, so
+    # without this every rank would train on the same frames -- turning an
+    # N-GPU run into N copies of the same data rather than an N x larger batch.
+    if num_devices > 1:
+        train_dataset = train_dataset.shard(num_devices, process_index)
+        val_dataset = val_dataset.shard(num_devices, process_index)
 
     # Prefetch for throughput
     train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
