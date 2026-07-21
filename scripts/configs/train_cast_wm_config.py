@@ -9,7 +9,14 @@ Window size 8, action horizon 1 (single-step prediction per timestep).
 Action dim = 4 (local_x, local_y, sin_yaw, cos_yaw).
 """
 
+import os
+
 from ml_collections import ConfigDict
+
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DATA_DIR = os.environ.get("PIJEPA_DATA_DIR", os.path.join(PROJECT_ROOT, "data", "CAST_dataset"))
+WM_SAVE_DIR = os.environ.get("PIJEPA_WM_SAVE_DIR", os.path.join(PROJECT_ROOT, "runs", "world_model"))
 
 
 def get_config(encoder_type: str = "dino"):
@@ -72,7 +79,7 @@ def get_config(encoder_type: str = "dino"):
 
     # ── Data ─────────────────────────────────────────────────────────────
     cfg.window_size = 8              # 8 consecutive observations per sample
-    cfg.data_dir = "/mnt/weka/zhougrp/datasets/CAST_dataset"
+    cfg.data_dir = DATA_DIR
 
     cfg.dataset_names = [
         "cast_filtered_dataset",
@@ -123,7 +130,7 @@ def get_config(encoder_type: str = "dino"):
     cfg.viz = False
     cfg.viz_interval = 500              # log image+action viz every N steps
     cfg.save_interval = 2000
-    cfg.save_dir = "/mnt/weka/zhougrp/octo_wm_cast"
+    cfg.save_dir = WM_SAVE_DIR
     cfg.wandb_project = "cast-world-model"
 
     return cfg
