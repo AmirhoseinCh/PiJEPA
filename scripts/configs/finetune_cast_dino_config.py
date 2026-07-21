@@ -39,6 +39,10 @@ from octo.utils.train_utils import hf_weights_loader
 from octo.model.components.dino_encoder import DinoV2EncoderPt
 
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DATA_DIR = os.environ.get("PIJEPA_DATA_DIR", os.path.join(PROJECT_ROOT, "data", "CAST_dataset"))
+
+
 def update_config(config, **kwargs):
     updates = ConfigDict(kwargs)
     new_config = deepcopy(config)
@@ -101,7 +105,7 @@ def get_config(config_string=None):
 
     # === DATASET CONFIGURATION ===
 
-    data_dir = '/mnt/weka/zhougrp/datasets/CAST_dataset'
+    data_dir = DATA_DIR
 
     primary_augment_kwargs = dict(
         random_brightness=[0.1],
