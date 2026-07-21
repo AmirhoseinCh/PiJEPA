@@ -117,7 +117,9 @@ class BlockTransformerPt(nn.Module, FromJaxModel):
         self.enforce_causal = enforce_causal
         self.use_correct_attention = use_correct_attention
         self.transformer = TransformerPt(**self.transformer_kwargs)
-        self.attention_mask = None
+        # Structural attention masks, memoised by token-group layout. See
+        # generate_attention_mask for why this is keyed rather than a single field.
+        self._attention_mask_cache = {}
 
     def pt_to_jax_args_map(self):
         return {
@@ -244,45 +246,71 @@ class BlockTransformerPt(nn.Module, FromJaxModel):
         self,
         prefix_groups: Sequence[PrefixGroupPt],
         timestep_groups: Sequence[TimestepGroupPt],
-        save_attention_mask
+        save_attention_mask=False,
     ):
         """
         Args:
             prefix_groups: A list of PrefixGroupPt objects.
             timestep_groups: A list of TimestepGroupPt objects.
+            save_attention_mask: Deprecated / ignored. The structural mask is now
+                always memoised (keyed by layout), so this hint is unnecessary.
+                Kept for backwards compatibility with existing call sites.
 
         Returns:
             attention_mask: A boolean mask of shape (batch, 1, total_tokens, total_tokens)
 
         We use the attention rules specified by each group to determine the transformer attention mask.
         We then combine this with the padding mask to ensure that padding tokens are not attended to.
-        """
 
-        if self.attention_mask is None:
+        The rule-based ("structural") part of the mask depends only on the
+        token-group *layout* -- how many tokens each group contributes, the
+        horizon, and the attention side -- not on the batch or on token values.
+        Building it is an O(total_tokens^2) Python loop that writes into a tensor
+        element by element (e.g. ~74.5k iterations at 273 tokens), which is
+        expensive to run on every forward pass. Previously this loop ran every
+        call unless a single un-keyed ``self.attention_mask`` was cached, which
+        was both slow on the default path and unsafe if the layout ever changed
+        between calls (the stale mask would be the wrong shape). We instead
+        memoise the structural mask keyed on the layout, so the loop runs at most
+        once per distinct layout and is always correct. The batch-dependent
+        padding mask is still recomputed every call and combined below.
+        """
+        if not self.use_correct_attention:
+            # No longer used in new models, but keeping for backward compatibility w/ models released in DEcember
+            side = "left"
+        else:
+            side = "right"
+
+        horizon = timestep_groups[0].tokens.shape[1]
+        tokens_per_prefix_group = tuple(group.tokens.shape[1] for group in prefix_groups)
+        tokens_per_timestep_group = tuple(group.tokens.shape[2] for group in timestep_groups)
+        device = timestep_groups[0].tokens.device
+        cache_key = (
+            tokens_per_prefix_group,
+            tokens_per_timestep_group,
+            horizon,
+            side,
+            str(device),
+        )
+
+        attention_mask = self._attention_mask_cache.get(cache_key)
+        if attention_mask is None:
             if self.enforce_causal:
                 self.verify_causality(prefix_groups, timestep_groups)
 
             if not self.use_correct_attention:
-                # No longer used in new models, but keeping for backward compatibility w/ models released in DEcember
                 logging.warning(
                     "Using old attention computation from released December models."
                 )
-                side = "left"
-            else:
-                side = "right"
 
             def _get_position(i, tokens_per_elem):
                 return np.searchsorted(np.cumsum(tokens_per_elem), i, side=side)
-
-            horizon = timestep_groups[0].tokens.shape[1]
-            tokens_per_prefix_group = [group.tokens.shape[1] for group in prefix_groups]
-            tokens_per_timestep_group = [group.tokens.shape[2] for group in timestep_groups]
 
             tokens_for_prefix = sum(tokens_per_prefix_group)
             tokens_per_time_step = sum(tokens_per_timestep_group)
 
             total_tokens = tokens_for_prefix + tokens_per_time_step * horizon
-            attention_mask = torch.zeros((total_tokens, total_tokens), dtype=torch.bool, device=timestep_groups[0].tokens.device)
+            attention_mask = torch.zeros((total_tokens, total_tokens), dtype=torch.bool, device=device)
 
             def get_token_metadata(i):
                 if i < tokens_for_prefix:
@@ -300,14 +328,12 @@ class BlockTransformerPt(nn.Module, FromJaxModel):
                     metadata_j = get_token_metadata(j)
                     mask = int(metadata_i.should_attend_to(metadata_j))
                     attention_mask[i, j] = mask
-                    
-            if save_attention_mask:
-                self.attention_mask = attention_mask.detach()
+
+            self._attention_mask_cache[cache_key] = attention_mask.detach()
 
         pad_attention_mask = self.generate_pad_attention_mask(
             prefix_groups, timestep_groups
         )
-        attention_mask = attention_mask if self.attention_mask is None else self.attention_mask.clone()
         attention_mask = torch.logical_and(attention_mask, pad_attention_mask)
         return attention_mask
 
